@@ -1,0 +1,158 @@
+# ======================================================================================= #
+# Nitro Builder
+# ======================================================================================= #
+FROM --platform=$BUILDPLATFORM alpine:3.23@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659 as nitro-builder
+
+RUN apk add --no-cache \
+    && apk add build-base \
+    && apk add git
+
+RUN git clone -b v0.8 --depth 1 https://github.com/leahneukirchen/nitro.git /nitro \
+    && cd /nitro \
+    && make LDFLAGS="-static" \
+    && strip nitro
+
+# ======================================================================================= #
+# Devcontainer
+# ======================================================================================= #
+FROM --platform=$BUILDPLATFORM debian:trixie-slim@sha256:1d3c811171a08a5adaa4a163fbafd96b61b87aa871bbc7aa15431ac275d3d430
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
+
+# renovate: datasource=github-releases depName=bazelbuild/bazelisk
+ARG BAZELISK_VERSION=1.28.1
+
+# renovate: datasource=github-releases depName=bazelbuild/buildtools
+ARG BAZEL_BUILDTOOLS_VERSION=8.5.1
+
+# renovate: datasource=github-releases depName=containerd/nerdctl
+ARG NERDCTL_VERSION=2.2.1
+
+# renovate: datasource=github-releases packageName=kubernetes/kubernetes
+ARG KUBECTL_VERSION=1.35.2
+
+# renovate: datasource=github-releases packageName=siderolabs/talos
+ARG TALOSCTL_VERSION=1.12.3
+
+# User configuration.
+ARG USERNAME=vscode
+ARG USER_UID=1000
+ARG USER_GID=$USER_UID
+
+# Install required OS-packages
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+        ca-certificates \
+        curl \
+        git \
+        git-lfs \
+        htop \
+        iptables \
+        less \
+        sudo \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install bazelisk
+RUN case "$TARGETARCH" in \
+    amd64|arm64) \
+        curl -sSL "https://github.com/bazelbuild/bazelisk/releases/download/v${BAZELISK_VERSION}/bazelisk-$TARGETOS-$TARGETARCH" -o /usr/local/bin/bazelisk \
+        && chmod +x /usr/local/bin/bazelisk \
+        && ln -s /usr/local/bin/bazelisk /usr/local/bin/bazel \
+        ;; \
+    *) \
+        echo "Unsupported arch: $TARGETARCH" && exit 1 \
+        ;; \
+esac
+
+# This image does not install any host C/C++ toolchain. So, we need to opt-out
+# of rules_cc's host toolchain auto-detection.
+# See: https://github.com/bazelbuild/rules_cc/blob/748fbdfc8c81e2a7d9c24e2d65cfc16d13398391/cc/private/toolchain/cc_configure.bzl#L32-L33
+ENV BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+
+# Install buildifier and buildozer
+RUN case "$TARGETARCH" in \
+    amd64|arm64) \
+        curl -sSL "https://github.com/bazelbuild/buildtools/releases/download/v$BAZEL_BUILDTOOLS_VERSION/buildifier-$TARGETOS-$TARGETARCH" -o /usr/local/bin/buildifier \
+        && chmod +x /usr/local/bin/buildifier \
+        && curl -sSL "https://github.com/bazelbuild/buildtools/releases/download/v$BAZEL_BUILDTOOLS_VERSION/buildozer-$TARGETOS-$TARGETARCH" -o /usr/local/bin/buildozer \
+        && chmod +x /usr/local/bin/buildozer \
+        ;; \
+    *) \
+        echo "Unsupported arch: $TARGETARCH" && exit 1 \
+        ;; \
+esac
+
+# Install starpls
+RUN case "$TARGETARCH" in \
+    amd64|arm64) \
+        curl -sSL "https://github.com/withered-magic/starpls/releases/download/v0.1.22/starpls-$TARGETOS-$TARGETARCH" -o /usr/local/bin/starpls \
+        && chmod +x /usr/local/bin/starpls \
+        ;; \
+    *) \
+        echo "Unsupported arch: $TARGETARCH" && exit 1 \
+        ;; \
+esac
+
+# Install kubectl
+RUN case "$TARGETARCH" in \
+    amd64|arm64) \
+        curl -sSL "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/$TARGETOS/${TARGETARCH}/kubectl" -o /usr/local/bin/kubectl \
+        && chmod +x /usr/local/bin/kubectl \
+        ;; \
+    *) \
+        echo "Unsupported arch: $TARGETARCH" && exit 1 \
+        ;; \
+esac
+
+# Install talosctl
+RUN case "$TARGETARCH" in \
+    amd64|arm64) \
+        curl -sSL "https://github.com/siderolabs/talos/releases/download/v${TALOSCTL_VERSION}/talosctl-$TARGETOS-${TARGETARCH}" -o /usr/local/bin/talosctl \
+        && chmod +x /usr/local/bin/talosctl \
+        ;; \
+    *) \
+        echo "Unsupported arch: $TARGETARCH" && exit 1 \
+        ;; \
+esac
+
+# Install nerdctl-full
+RUN case "$TARGETARCH" in \
+    amd64|arm64) \
+        curl -sSL "https://github.com/containerd/nerdctl/releases/download/v${NERDCTL_VERSION}/nerdctl-full-${NERDCTL_VERSION}-$TARGETOS-${TARGETARCH}.tar.gz" | tar -xz -C /usr/local \
+        ;; \
+    *) \
+        echo "Unsupported arch: $TARGETARCH" && exit 1 \
+        ;; \
+esac
+
+# Install the nitro supervisor.
+COPY --from=nitro-builder /nitro/nitro /usr/bin/nitro
+RUN mkdir -p /etc/nitro
+
+# Configure containerd.
+RUN mkdir -p /etc/containerd \
+    && containerd config default > /etc/containerd/config.toml \
+    && sed -i "s/gid = 0/gid = $USER_GID/" /etc/containerd/config.toml
+
+ENV CONTAINERD_ADDRESS=/run/containerd/containerd.sock
+ENV CONTAINERD_NAMESPACE=default
+
+RUN <<'EOF' cat > /etc/nitro/containerd/run
+#!/bin/bash
+set -eu -o pipefail
+exec /usr/local/bin/containerd > /var/log/containerd.log 2>&1
+EOF
+
+RUN chmod 0755 /etc/nitro/containerd/run
+
+# Setup non-root user and sudoers
+RUN groupadd --gid $USER_GID $USERNAME \
+    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME -s /bin/bash \
+    && echo "$USERNAME ALL=(root) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME \
+    && chmod 0440 /etc/sudoers.d/$USERNAME
+
+USER $USERNAME
+
+ENTRYPOINT ["sudo", "/usr/bin/nitro", "/etc/nitro"]

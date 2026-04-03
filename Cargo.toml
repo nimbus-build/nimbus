@@ -1,0 +1,17 @@
+# Copyright (c) 2026 The Nimbus Authors. All rights reserved.
+#
+# The use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+[workspace.metadata]
+authors = ["The Nimbus Authors"]
+license = "BSD-3-Clause"
+repository = "https://github.com/nimbus-build/nimbus"
+
+[workspace]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+
+[workspace.dependencies]

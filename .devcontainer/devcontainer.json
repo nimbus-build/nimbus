@@ -1,0 +1,53 @@
+{
+    "name": "Nimbus DevContainer",
+    "build": {
+        "dockerfile": "Containerfile"
+    },
+    "customizations": {
+        "vscode": {
+            "settings": {
+                // Bazel extension settings.
+                "bazel.enableCodeLens": true,
+                "bazel.buildifierExecutable": "buildifier",
+                "bazel.lsp.command": "starpls",
+                "bazel.lsp.args": [
+                    "server",
+                    // See: https://github.com/withered-magic/starpls?tab=readme-ov-file#experimental-features
+                    "--experimental_infer_ctx_attributes",
+                    "--experimental_use_code_flow_analysis",
+                    "--experimental_enable_label_completions"
+                ],
+                // Editor settings.
+                "editor.formatOnSave": true,
+                // Files settings.
+                "files.eol": "\n",
+                "files.insertFinalNewline": true,
+                "files.trimFinalNewlines": true,
+                "files.autoSave": "onFocusChange",
+                "files.exclude": {
+                    "bazel-*": true
+                },
+                // Search settings.
+                "search.exclude": {
+                    "bazel-*": true
+                },
+                // Per file-type configuration and overrides.
+                "[diff]": {
+                    // The patch/diff files might break if additional
+                    // newlines are added or removed from their end.
+                    "files.insertFinalNewline": false,
+                    "files.trimFinalNewlines": false
+                }
+            },
+            "extensions": [
+                "rust-lang.rust-analyzer",
+                "bazelbuild.vscode-bazel"
+            ]
+        }
+    },
+    "remoteUser": "vscode",
+    "privileged": true,
+    // Do not override the image's entrypoint command. Otherwise,
+    // 'nitro' won't run as PID 1.
+    "overrideCommand": false
+}

@@ -1,0 +1,11 @@
+# Copyright (c) 2026 The Nimbus Authors. All rights reserved.
+#
+# The use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# Some rulesets started tracking usage (e.g. Aspect's ones) but
+# thankfully, they respect the 'DO_NOT_TRACK' convention.
+common --repo_env=DO_NOT_TRACK=1
+
+# Rust requires libgcc_s for linking. Use LLVM's stub implementation.
+common --@llvm//config:experimental_stub_libgcc_s=True

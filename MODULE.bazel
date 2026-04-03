@@ -1,0 +1,42 @@
+# Copyright (c) 2026 The Nimbus Authors. All rights reserved.
+#
+# The use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+"""Nimbus root module."""
+
+bazel_dep(name = "platforms", version = "1.0.0")
+
+# ============================================================================ #
+# LLVM Toolchains
+# ============================================================================ #
+
+bazel_dep(name = "llvm", version = "0.6.7")
+
+llvm_toolchain = use_extension("@llvm//extensions:toolchain.bzl", "toolchain")
+use_repo(llvm_toolchain, "llvm_toolchains")
+
+# ============================================================================ #
+# Rust
+# ============================================================================ #
+
+bazel_dep(name = "rules_rust", version = "0.69.0")
+
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    edition = "2024",
+    versions = ["1.94.0"],
+)
+use_repo(rust, "rust_toolchains")
+
+# ============================================================================ #
+# Toolchains
+# ============================================================================ #
+
+# NB: Registration order determines toolchain selection priority. Earlier
+# entries take precedence over later ones when multiple toolchains match.
+
+register_toolchains(
+    "@llvm_toolchains//:all",
+    "@rust_toolchains//:all",
+)
